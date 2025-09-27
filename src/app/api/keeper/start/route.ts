@@ -60,13 +60,12 @@ export async function POST() {
     const privateKey = new Ed25519PrivateKey(config.keeper.privateKey)
     const keeper = Account.fromPrivateKey({ privateKey })
 
-    // Start a new round using the on-chain Pyth price
+    // Start a new round using the Pyth pull oracle integration
     const transaction = await aptos.transaction.build.simple({
       sender: keeper.accountAddress,
       data: {
-        function: `${config.aptos.moduleAddress}::betting::start_round`,
+        function: `${config.aptos.moduleAddress}::betting::start_round_with_pyth`,
         functionArguments: [
-          startPriceInMicroDollars, // start_price in micro-dollars from on-chain Pyth
           config.keeper.roundDuration, // duration_secs (default: 300 = 5 minutes)
         ],
       },

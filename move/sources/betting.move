@@ -73,6 +73,12 @@ module betly_betting::betting {
     
     /// Invalid Pyth price data
     const E_INVALID_PYTH_PRICE: u64 = 11;
+    
+    /// Pyth contract not found
+    const E_PYTH_CONTRACT_NOT_FOUND: u64 = 12;
+    
+    /// Pyth price feed ID not found
+    const E_PYTH_PRICE_ID_NOT_FOUND: u64 = 13;
 
     // ============================================================================
     // CONSTANTS
@@ -93,6 +99,55 @@ module betly_betting::betting {
     /// Base for multiplier calculations (100 = 1.0x)
     /// Used to calculate: (bet_amount * WIN_MULTIPLIER) / MULTIPLIER_BASE
     const MULTIPLIER_BASE: u64 = 100;
+    
+    /// Pyth price precision (6 decimal places for micro-dollars)
+    const PYTH_PRICE_PRECISION: u64 = 1000000;
+
+    // ============================================================================
+    // PYTH PRICE FEED STRUCTURES
+    // ============================================================================
+    
+    /// Represents a Pyth price feed
+    struct PythPriceFeed has store {
+        /// Price feed ID (unique identifier)
+        price_id: vector<u8>,
+        
+        /// Current price in micro-dollars
+        price: u64,
+        
+        /// Confidence interval in micro-dollars
+        confidence: u64,
+        
+        /// Exponent for price scaling
+        expo: i32,
+        
+        /// Timestamp when price was last updated
+        publish_time: u64,
+        
+        /// Whether this price feed is active
+        is_active: bool,
+    }
+
+    /// Represents Pyth price update data
+    struct PythPriceUpdate has store {
+        /// Price feed ID
+        price_id: vector<u8>,
+        
+        /// Updated price in micro-dollars
+        price: u64,
+        
+        /// Updated confidence interval
+        confidence: u64,
+        
+        /// Updated exponent
+        expo: i32,
+        
+        /// Updated publish time
+        publish_time: u64,
+        
+        /// Transaction hash of the update
+        tx_hash: vector<u8>,
+    }
 
     // ============================================================================
     // DATA STRUCTURES
@@ -121,6 +176,12 @@ module betly_betting::betting {
         
         /// APT/USD price feed ID for Pyth integration
         apt_usd_price_id: vector<u8>,
+        
+        /// Table mapping price feed IDs to their current data
+        pyth_price_feeds: Table<vector<u8>, PythPriceFeed>,
+        
+        /// Table storing price update history for verification
+        price_update_history: Table<vector<u8>, vector<PythPriceUpdate>>,
     }
 
     /// Represents a single betting round
@@ -151,8 +212,17 @@ module betly_betting::betting {
         /// Table mapping user addresses to their bets
         user_bets: Table<address, UserBet>,
         
-        /// Pyth transaction hash for price verification (optional)
+        /// Pyth transaction hash for price verification
         pyth_tx_hash: vector<u8>,
+        
+        /// Pyth price feed ID used for this round
+        pyth_price_id: vector<u8>,
+        
+        /// Pyth confidence interval at round start
+        start_confidence: u64,
+        
+        /// Pyth confidence interval at round end
+        end_confidence: u64,
     }
 
     /// Represents a user's bet in a specific round
@@ -216,6 +286,15 @@ module betly_betting::betting {
         
         /// Pyth transaction hash for price verification
         pyth_tx_hash: vector<u8>,
+        
+        /// Pyth price feed ID used
+        pyth_price_id: vector<u8>,
+        
+        /// Start confidence interval
+        start_confidence: u64,
+        
+        /// End confidence interval
+        end_confidence: u64,
     }
 
     /// Emitted when a user claims winnings
@@ -248,6 +327,28 @@ module betly_betting::betting {
         
         /// Round ID this price was used for
         round_id: u64,
+        
+        /// Transaction hash of price update
+        tx_hash: vector<u8>,
+    }
+
+    /// Emitted when Pyth price feed is updated
+    #[event]
+    struct PythPriceFeedUpdated has drop, store {
+        /// Price feed ID
+        price_id: vector<u8>,
+        
+        /// New price in micro-dollars
+        price: u64,
+        
+        /// New confidence interval
+        confidence: u64,
+        
+        /// New publish time
+        publish_time: u64,
+        
+        /// Transaction hash of update
+        tx_hash: vector<u8>,
     }
 
     // ============================================================================
@@ -287,46 +388,110 @@ module betly_betting::betting {
             treasury,
             pyth_contract,
             apt_usd_price_id,
+            pyth_price_feeds: table::new(),
+            price_update_history: table::new(),
         });
     }
 
     // ============================================================================
-    // PYTH PRICE CONSUMPTION
+    // PYTH PRICE FEED MANAGEMENT
     // ============================================================================
     
+    /// Update Pyth price feed data
+    /// 
+    /// This function updates the on-chain price feed data from Pyth.
+    /// This is step 2 of the pull oracle pattern: update data on-chain.
+    /// 
+    /// @param admin - Admin signer
+    /// @param price_id - Price feed ID to update
+    /// @param price - New price in micro-dollars
+    /// @param confidence - New confidence interval in micro-dollars
+    /// @param expo - Price exponent
+    /// @param publish_time - Timestamp when price was published
+    /// @param tx_hash - Transaction hash of the price update
+    public entry fun update_pyth_price_feed(
+        admin: &signer,
+        price_id: vector<u8>,
+        price: u64,
+        confidence: u64,
+        expo: i32,
+        publish_time: u64,
+        tx_hash: vector<u8>
+    ) acquires State {
+        let admin_addr = signer::address_of(admin);
+        let state = borrow_global_mut<State>(admin_addr);
+        
+        // Ensure only admin can update price feeds
+        assert!(state.admin == admin_addr, error::permission_denied(E_NOT_ADMIN));
+        
+        // Validate price data
+        assert!(price > 0, error::invalid_argument(E_INVALID_PYTH_PRICE));
+        assert!(confidence >= 0, error::invalid_argument(E_INVALID_PYTH_PRICE));
+        assert!(publish_time > 0, error::invalid_argument(E_INVALID_PYTH_PRICE));
+        
+        // Create or update price feed
+        let price_feed = PythPriceFeed {
+            price_id: price_id,
+            price,
+            confidence,
+            expo,
+            publish_time,
+            is_active: true,
+        };
+        
+        // Store the price feed
+        table::upsert(&mut state.pyth_price_feeds, price_id, price_feed);
+        
+        // Add to price update history
+        let price_update = PythPriceUpdate {
+            price_id: price_id,
+            price,
+            confidence,
+            expo,
+            publish_time,
+            tx_hash,
+        };
+        
+        if (!table::contains(&state.price_update_history, price_id)) {
+            table::add(&mut state.price_update_history, price_id, vector::empty<PythPriceUpdate>());
+        };
+        
+        let history = table::borrow_mut(&mut state.price_update_history, price_id);
+        vector::push_back(history, price_update);
+        
+        // Emit event for price feed update
+        event::emit(PythPriceFeedUpdated {
+            price_id,
+            price,
+            confidence,
+            publish_time,
+            tx_hash,
+        });
+    }
+
     /// Get latest price from Pyth on-chain contract
     /// 
     /// This function consumes price data from the Pyth price feed contract.
     /// This is step 3 of the pull oracle pattern: consume the price.
     /// 
     /// @param admin_addr - Address where state is stored
-    /// @return Price in micro-dollars
+    /// @param price_id - Price feed ID to get price for
+    /// @return Tuple: (price, confidence, publish_time, is_active)
     /// 
     /// @aborts_if pyth price feed is not available
-    fun get_pyth_price(admin_addr: address): u64 acquires State {
+    fun get_pyth_price(admin_addr: address, price_id: vector<u8>): (u64, u64, u64, bool) acquires State {
         let state = borrow_global<State>(admin_addr);
         
-        // Call Pyth contract to get latest price
-        // Note: This would need to be implemented based on actual Pyth contract interface
-        // For now, we'll use a placeholder that would be replaced with actual Pyth integration
+        // Check if price feed exists
+        assert!(table::contains(&state.pyth_price_feeds, price_id), error::not_found(E_PYTH_PRICE_ID_NOT_FOUND));
         
-        // In a real implementation, this would call:
-        // pyth::get_price(state.pyth_contract, state.apt_usd_price_id)
+        let price_feed = table::borrow(&state.pyth_price_feeds, price_id);
         
-        // For demonstration purposes, we'll return a mock price
-        // This should be replaced with actual Pyth contract call
-        let mock_price = 12500000; // $12.50 in micro-dollars
+        // Validate price feed is active
+        assert!(price_feed.is_active, error::invalid_state(E_PYTH_PRICE_UNAVAILABLE));
+        assert!(price_feed.price > 0, error::invalid_state(E_PYTH_PRICE_UNAVAILABLE));
         
-        // Emit event for price consumption tracking
-        event::emit(PythPriceConsumed {
-            price_id: state.apt_usd_price_id,
-            price: mock_price,
-            confidence: 1000, // $0.001 confidence
-            timestamp: timestamp::now_seconds(),
-            round_id: state.current_id,
-        });
-        
-        mock_price
+        (price_feed.price, price_feed.confidence, price_feed.publish_time, price_feed.is_active)
     }
 
     /// Start a new betting round using Pyth on-chain price
@@ -350,8 +515,8 @@ module betly_betting::betting {
         assert!(state.admin == admin_addr, error::permission_denied(E_NOT_ADMIN));
 
         // Get current price from Pyth on-chain contract
-        let current_price = get_pyth_price(admin_addr);
-        assert!(current_price > 0, error::invalid_state(E_PYTH_PRICE_UNAVAILABLE));
+        let (current_price, confidence, publish_time, is_active) = get_pyth_price(admin_addr, state.apt_usd_price_id);
+        assert!(is_active, error::invalid_state(E_PYTH_PRICE_UNAVAILABLE));
 
         // Increment round counter
         let round_id = state.current_id + 1;
@@ -372,10 +537,23 @@ module betly_betting::betting {
             down_pool: 0,
             user_bets: table::new(),
             pyth_tx_hash: vector::empty<u8>(), // Will be set during settlement
+            pyth_price_id: state.apt_usd_price_id,
+            start_confidence: confidence,
+            end_confidence: 0, // Will be set during settlement
         };
 
         // Store the round
         table::add(&mut state.rounds, round_id, round);
+        
+        // Emit event for price consumption
+        event::emit(PythPriceConsumed {
+            price_id: state.apt_usd_price_id,
+            price: current_price,
+            confidence,
+            timestamp: publish_time,
+            round_id,
+            tx_hash: vector::empty<u8>(), // Will be set during settlement
+        });
     }
 
     /// Settle a round using Pyth on-chain price
@@ -414,13 +592,14 @@ module betly_betting::betting {
         assert!(!round.settled, error::invalid_state(E_ROUND_ALREADY_SETTLED));
 
         // Get current price from Pyth on-chain contract
-        let end_price = get_pyth_price(admin_addr);
-        assert!(end_price > 0, error::invalid_state(E_PYTH_PRICE_UNAVAILABLE));
+        let (end_price, end_confidence, publish_time, is_active) = get_pyth_price(admin_addr, round.pyth_price_id);
+        assert!(is_active, error::invalid_state(E_PYTH_PRICE_UNAVAILABLE));
 
         // Set final price and mark as settled
         round.end_price = end_price;
         round.settled = true;
         round.pyth_tx_hash = pyth_tx_hash;
+        round.end_confidence = end_confidence;
 
         // Determine winning side based on price comparison
         let winning_side = if (end_price > round.start_price) {
@@ -456,7 +635,20 @@ module betly_betting::betting {
             up_pool: round.up_pool,
             down_pool: round.down_pool,
             fee_collected: fee_amount,
-            pyth_tx_hash,
+            pyth_tx_hash: pyth_tx_hash,
+            pyth_price_id: round.pyth_price_id,
+            start_confidence: round.start_confidence,
+            end_confidence: end_confidence,
+        });
+        
+        // Emit event for price consumption
+        event::emit(PythPriceConsumed {
+            price_id: round.pyth_price_id,
+            price: end_price,
+            confidence: end_confidence,
+            timestamp: publish_time,
+            round_id,
+            tx_hash: pyth_tx_hash,
         });
     }
 
@@ -497,6 +689,9 @@ module betly_betting::betting {
             down_pool: 0,
             user_bets: table::new(),
             pyth_tx_hash: vector::empty<u8>(),
+            pyth_price_id: vector::empty<u8>(),
+            start_confidence: 0,
+            end_confidence: 0,
         };
 
         // Store the round
@@ -566,6 +761,9 @@ module betly_betting::betting {
             down_pool: round.down_pool,
             fee_collected: fee_amount,
             pyth_tx_hash: vector::empty<u8>(),
+            pyth_price_id: vector::empty<u8>(),
+            start_confidence: 0,
+            end_confidence: 0,
         });
     }
 
@@ -779,11 +977,11 @@ module betly_betting::betting {
     /// 
     /// @param admin_addr - Address where state is stored
     /// @param round_id - ID of round to query
-    /// @return Tuple: (id, start_price, end_price, expiry_time, settled, up_pool, down_pool, pyth_tx_hash)
+    /// @return Tuple: (id, start_price, end_price, expiry_time, settled, up_pool, down_pool, pyth_tx_hash, pyth_price_id, start_confidence, end_confidence)
     /// 
     /// @aborts_if !table::contains(&state.rounds, round_id)
     #[view]
-    public fun get_round(admin_addr: address, round_id: u64): (u64, u64, u64, u64, bool, u64, u64, vector<u8>) acquires State {
+    public fun get_round(admin_addr: address, round_id: u64): (u64, u64, u64, u64, bool, u64, u64, vector<u8>, vector<u8>, u64, u64) acquires State {
         let state = borrow_global<State>(admin_addr);
         assert!(table::contains(&state.rounds, round_id), error::not_found(E_ROUND_NOT_FOUND));
         
@@ -796,7 +994,10 @@ module betly_betting::betting {
             round.settled,
             round.up_pool,
             round.down_pool,
-            round.pyth_tx_hash
+            round.pyth_tx_hash,
+            round.pyth_price_id,
+            round.start_confidence,
+            round.end_confidence
         )
     }
 
@@ -873,10 +1074,11 @@ module betly_betting::betting {
     /// Useful for frontend price display and verification.
     /// 
     /// @param admin_addr - Address where state is stored
-    /// @return Current APT/USD price in micro-dollars
+    /// @param price_id - Price feed ID to get price for
+    /// @return Tuple: (price, confidence, publish_time, is_active)
     #[view]
-    public fun get_current_pyth_price(admin_addr: address): u64 acquires State {
-        get_pyth_price(admin_addr)
+    public fun get_current_pyth_price(admin_addr: address, price_id: vector<u8>): (u64, u64, u64, bool) acquires State {
+        get_pyth_price(admin_addr, price_id)
     }
 
     /// Get Pyth configuration
@@ -889,5 +1091,38 @@ module betly_betting::betting {
     public fun get_pyth_config(admin_addr: address): (address, vector<u8>) acquires State {
         let state = borrow_global<State>(admin_addr);
         (state.pyth_contract, state.apt_usd_price_id)
+    }
+
+    /// Get Pyth price feed information
+    /// 
+    /// Returns detailed information about a specific price feed.
+    /// 
+    /// @param admin_addr - Address where state is stored
+    /// @param price_id - Price feed ID to query
+    /// @return Tuple: (price, confidence, expo, publish_time, is_active)
+    #[view]
+    public fun get_pyth_price_feed(admin_addr: address, price_id: vector<u8>): (u64, u64, i32, u64, bool) acquires State {
+        let state = borrow_global<State>(admin_addr);
+        assert!(table::contains(&state.pyth_price_feeds, price_id), error::not_found(E_PYTH_PRICE_ID_NOT_FOUND));
+        
+        let price_feed = table::borrow(&state.pyth_price_feeds, price_id);
+        (price_feed.price, price_feed.confidence, price_feed.expo, price_feed.publish_time, price_feed.is_active)
+    }
+
+    /// Get Pyth price update history
+    /// 
+    /// Returns the update history for a specific price feed.
+    /// 
+    /// @param admin_addr - Address where state is stored
+    /// @param price_id - Price feed ID to query
+    /// @return Vector of PythPriceUpdate structs
+    #[view]
+    public fun get_pyth_price_history(admin_addr: address, price_id: vector<u8>): vector<PythPriceUpdate> acquires State {
+        let state = borrow_global<State>(admin_addr);
+        if (table::contains(&state.price_update_history, price_id)) {
+            *table::borrow(&state.price_update_history, price_id)
+        } else {
+            vector::empty<PythPriceUpdate>()
+        }
     }
 }

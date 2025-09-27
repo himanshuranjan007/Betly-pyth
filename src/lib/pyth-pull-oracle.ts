@@ -116,25 +116,69 @@ export class PythPullOracleService {
    * Update price feeds on-chain using updatePriceFeeds method
    * Step 2 of pull oracle pattern
    * 
-   * Note: This is a simplified implementation for demonstration.
-   * In a real implementation, you would:
-   * 1. Get price update data from Pyth
-   * 2. Call the actual updatePriceFeeds function on the Pyth contract
+   * This function updates the Betly smart contract with Pyth price data.
+   * It calls the update_pyth_price_feed function on our smart contract.
    */
   async updatePriceFeedsOnChain(priceIds: string[]): Promise<string | null> {
     try {
       console.log(`🔄 Updating price feeds on-chain for ${priceIds.length} feeds`)
 
-      // For demonstration purposes, we'll simulate the updatePriceFeeds call
-      // In a real implementation, this would:
-      // 1. Get price update data from Pyth
-      // 2. Call updatePriceFeeds on the Pyth contract
+      // Fetch latest price data for each price ID
+      const priceDataPromises = priceIds.map(id => this.fetchPriceFromHermes(id))
+      const priceDataResults = await Promise.all(priceDataPromises)
       
-      // Simulate transaction hash for demonstration
-      const mockTransactionHash = `0x${Math.random().toString(16).substr(2, 64)}`
+      const validPriceData = priceDataResults.filter(data => data !== null)
       
-      console.log(`✅ Price feeds updated on-chain (simulated): ${mockTransactionHash}`)
-      return mockTransactionHash
+      if (validPriceData.length === 0) {
+        throw new Error('No valid price data found')
+      }
+
+      // Update each price feed on-chain
+      const updatePromises = validPriceData.map(async (priceData) => {
+        if (!priceData) return null
+
+        // Build transaction to update price feed on our smart contract
+        const transaction = await this.aptos.transaction.build.simple({
+          sender: this.keeper.accountAddress,
+          data: {
+            function: `${config.aptos.moduleAddress}::betting::update_pyth_price_feed`,
+            functionArguments: [
+              priceData.priceId,
+              Math.floor(priceData.price * 1000000), // Convert to micro-dollars
+              Math.floor(priceData.confidence * 1000000), // Convert confidence to micro-dollars
+              priceData.expo,
+              priceData.timestamp,
+              `0x${Math.random().toString(16).substr(2, 64)}`, // Mock transaction hash
+            ],
+          },
+        })
+
+        // Submit transaction
+        const committedTxn = await this.aptos.signAndSubmitTransaction({
+          signer: this.keeper,
+          transaction,
+        })
+
+        // Wait for transaction to be executed
+        await this.aptos.waitForTransaction({
+          transactionHash: committedTxn.hash,
+        })
+
+        console.log(`✅ Updated price feed ${priceData.priceId}: ${committedTxn.hash}`)
+        return committedTxn.hash
+      })
+
+      const transactionHashes = await Promise.all(updatePromises)
+      const validHashes = transactionHashes.filter(hash => hash !== null)
+      
+      if (validHashes.length === 0) {
+        throw new Error('No price feeds were updated successfully')
+      }
+
+      // Return the first transaction hash as the main result
+      const mainTransactionHash = validHashes[0]
+      console.log(`✅ Price feeds updated on-chain: ${mainTransactionHash}`)
+      return mainTransactionHash
 
     } catch (error) {
       console.error('❌ Error updating price feeds on-chain:', error)
@@ -145,25 +189,46 @@ export class PythPullOracleService {
   /**
    * Get latest price from on-chain Pyth contract
    * Step 3 of pull oracle pattern
+   * 
+   * This function calls our smart contract to get the current price.
+   * It uses the get_current_pyth_price view function.
    */
   async getPriceFromOnChain(priceId: string): Promise<number | null> {
     try {
       console.log(`📊 Getting price from on-chain contract for ${priceId}`)
 
-      // For demonstration purposes, we'll fetch from Hermes and return that price
-      // In a real implementation, this would call the Pyth contract directly
-      const priceData = await this.fetchPriceFromHermes(priceId)
-      
-      if (!priceData) {
-        throw new Error('No price data available')
+      // Call view function to get current price from our smart contract
+      const response = await this.aptos.view({
+        payload: {
+          function: `${config.aptos.moduleAddress}::betting::get_current_pyth_price`,
+          functionArguments: [priceId],
+        },
+      })
+
+      if (!response || response.length < 4) {
+        throw new Error('Invalid response from smart contract')
       }
 
-      console.log(`✅ On-chain price: $${priceData.price.toFixed(6)}`)
-      return priceData.price
+      // Parse response: (price, confidence, publish_time, is_active)
+      const price = parseFloat(response[0] as string) / 1000000 // Convert from micro-dollars
+      const confidence = parseFloat(response[1] as string) / 1000000
+      const publishTime = parseInt(response[2] as string)
+      const isActive = response[3] as boolean
+      
+      if (!isActive || price <= 0) {
+        throw new Error('Price feed is not active or invalid')
+      }
+      
+      console.log(`✅ On-chain price: $${price.toFixed(6)} (confidence: $${confidence.toFixed(6)})`)
+      return price
 
     } catch (error) {
       console.error('❌ Error getting price from on-chain contract:', error)
-      return null
+      
+      // Fallback to Hermes API if on-chain price is not available
+      console.log('🔄 Falling back to Hermes API...')
+      const priceData = await this.fetchPriceFromHermes(priceId)
+      return priceData?.price || null
     }
   }
 

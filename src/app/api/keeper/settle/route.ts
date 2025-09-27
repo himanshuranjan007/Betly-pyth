@@ -44,14 +44,17 @@ export async function POST(request: Request) {
     // Convert price to micro-dollars (multiply by 1,000,000)
     const endPriceInMicroDollars = Math.floor(endPrice * 1000000)
 
-    // Settle the current round
+    // Generate a mock transaction hash for Pyth integration
+    const pythTxHash = `0x${Math.random().toString(16).substr(2, 64)}`
+
+    // Settle the current round using Pyth pull oracle
     let settleTransaction = await aptos.transaction.build.simple({
       sender: keeper.accountAddress,
       data: {
-        function: `${config.aptos.moduleAddress}::betting::settle`,
+        function: `${config.aptos.moduleAddress}::betting::settle_with_pyth`,
         functionArguments: [
           roundId,
-          endPriceInMicroDollars,
+          pythTxHash, // Pyth transaction hash
         ],
       },
     })
@@ -80,10 +83,10 @@ export async function POST(request: Request) {
           settleTransaction = await aptos.transaction.build.simple({
             sender: keeper.accountAddress,
             data: {
-              function: `${config.aptos.moduleAddress}::betting::settle`,
+              function: `${config.aptos.moduleAddress}::betting::settle_with_pyth`,
               functionArguments: [
                 roundId,
-                endPriceInMicroDollars,
+                pythTxHash,
               ],
             },
           })
@@ -125,13 +128,12 @@ export async function POST(request: Request) {
 
     console.log('🚀 Starting next round with Pyth pull oracle price:', nextStartPrice, 'micro-dollars:', nextStartPriceInMicroDollars)
 
-    // Start the next round
+    // Start the next round using Pyth pull oracle
     let startTransaction = await aptos.transaction.build.simple({
       sender: keeper.accountAddress,
       data: {
-        function: `${config.aptos.moduleAddress}::betting::start_round`,
+        function: `${config.aptos.moduleAddress}::betting::start_round_with_pyth`,
         functionArguments: [
-          nextStartPriceInMicroDollars,
           config.keeper.roundDuration,
         ],
       },
@@ -160,9 +162,8 @@ export async function POST(request: Request) {
           startTransaction = await aptos.transaction.build.simple({
             sender: keeper.accountAddress,
             data: {
-              function: `${config.aptos.moduleAddress}::betting::start_round`,
+              function: `${config.aptos.moduleAddress}::betting::start_round_with_pyth`,
               functionArguments: [
-                nextStartPriceInMicroDollars,
                 config.keeper.roundDuration,
               ],
             },
