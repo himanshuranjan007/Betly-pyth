@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { Aptos, AptosConfig, Network, Ed25519PrivateKey, Account } from '@aptos-labs/ts-sdk'
 import { config } from '@/lib/config'
+import { pythPullOracle, getPythPrice } from '@/lib/pyth-pull-oracle'
 
 export async function POST(request: Request) {
   try {
@@ -20,6 +21,8 @@ export async function POST(request: Request) {
       )
     }
 
+    console.log('🔄 Settling round with Pyth pull oracle integration:', roundId, 'with end price:', endPrice)
+
     // Initialize Aptos client
     const aptosConfig = new AptosConfig({
       network: config.aptos.network as Network,
@@ -37,8 +40,6 @@ export async function POST(request: Request) {
     // Create keeper account from private key
     const privateKey = new Ed25519PrivateKey(config.keeper.privateKey)
     const keeper = Account.fromPrivateKey({ privateKey })
-
-    console.log('Settling round:', roundId, 'with end price:', endPrice)
 
     // Convert price to micro-dollars (multiply by 1,000,000)
     const endPriceInMicroDollars = Math.floor(endPrice * 1000000)
@@ -96,54 +97,33 @@ export async function POST(request: Request) {
       transactionHash: settleCommittedTxn.hash,
     })
 
-    console.log('Round settled:', settleExecutedTxn)
+    console.log('✅ Round settled:', settleExecutedTxn)
 
     // Wait 5 seconds cooldown before starting next round
     console.log('Starting 5-second cooldown...')
     await new Promise(resolve => setTimeout(resolve, 5000))
 
-    // Get current price for next round directly from Pyth API
-    let nextStartPrice
-    try {
-      const pythResponse = await fetch(
-        `${config.pyth.endpoint}/api/latest_price_feeds?ids[]=${config.pyth.aptUsdPriceId}`,
-        {
-          next: { revalidate: 1 }, // Cache for 1 second
-        }
-      )
-
-      if (!pythResponse.ok) {
-        throw new Error(`Pyth API error: ${pythResponse.status}`)
-      }
-
-      const data = await pythResponse.json()
-      
-      if (!data || !Array.isArray(data) || data.length === 0) {
-        throw new Error('No price data received from Pyth')
-      }
-
-      const priceFeed = data[0]
-      if (!priceFeed || !priceFeed.price) {
-        throw new Error('Invalid price feed data')
-      }
-
-      const priceData = priceFeed.price
-      nextStartPrice = parseFloat(priceData.price) * Math.pow(10, priceData.expo)
-      
-      console.log('Fetched next round price directly from Pyth:', nextStartPrice)
-    } catch (priceError) {
-      console.error('Error fetching price for next round from Pyth:', priceError)
-      throw new Error(`Failed to fetch current price for next round: ${priceError instanceof Error ? priceError.message : 'Unknown error'}`)
+    // Get current price for next round using Pyth pull oracle
+    console.log('🔄 Getting next round price via Pyth pull oracle...')
+    const nextRoundPythResult = await getPythPrice(config.pyth.aptUsdPriceId)
+    
+    if (!nextRoundPythResult.success || !nextRoundPythResult.priceData) {
+      console.error('❌ Failed to get next round price via Pyth pull oracle:', nextRoundPythResult.error)
+      throw new Error(`Failed to fetch current price for next round via Pyth pull oracle: ${nextRoundPythResult.error}`)
     }
 
+    const nextStartPrice = nextRoundPythResult.priceData.price
+    console.log(`✅ Next round price via Pyth pull oracle: $${nextStartPrice.toFixed(6)}`)
+    console.log(`📝 Pyth transaction hash: ${nextRoundPythResult.transactionHash}`)
+
     if (!nextStartPrice || nextStartPrice <= 0) {
-      throw new Error('Invalid price data for next round')
+      throw new Error('Invalid price data for next round from Pyth pull oracle')
     }
 
     // Convert price to micro-dollars for next round
     const nextStartPriceInMicroDollars = Math.floor(nextStartPrice * 1000000)
 
-    console.log('Starting next round with price:', nextStartPrice, 'micro-dollars:', nextStartPriceInMicroDollars)
+    console.log('🚀 Starting next round with Pyth pull oracle price:', nextStartPrice, 'micro-dollars:', nextStartPriceInMicroDollars)
 
     // Start the next round
     let startTransaction = await aptos.transaction.build.simple({
@@ -197,11 +177,11 @@ export async function POST(request: Request) {
       transactionHash: startCommittedTxn.hash,
     })
 
-    console.log('Next round started:', startExecutedTxn)
+    console.log('✅ Next round started with Pyth pull oracle integration:', startExecutedTxn)
 
     return NextResponse.json({
       success: true,
-      message: 'Round settled and next round started successfully',
+      message: 'Round settled and next round started successfully using Pyth pull oracle',
       settledRound: {
         roundId,
         endPrice,
@@ -215,14 +195,21 @@ export async function POST(request: Request) {
         transactionHash: startCommittedTxn.hash,
       },
       cooldownSeconds: 5,
+      pythIntegration: {
+        pullOracleUsed: true,
+        pythTransactionHash: nextRoundPythResult.transactionHash,
+        priceSource: 'on-chain-pyth',
+        confidence: nextRoundPythResult.priceData.confidence,
+        timestamp: nextRoundPythResult.priceData.timestamp,
+      },
     })
   } catch (error: unknown) {
-    console.error('Error settling round and starting next:', error)
+    console.error('❌ Error settling round and starting next with Pyth pull oracle:', error)
     const errorMessage = error instanceof Error ? error.message : 'Unknown error'
     const errorStack = error instanceof Error ? error.stack : undefined
     return NextResponse.json(
       { 
-        error: 'Failed to settle round and start next',
+        error: 'Failed to settle round and start next with Pyth pull oracle',
         details: errorMessage,
         stack: errorStack,
       },

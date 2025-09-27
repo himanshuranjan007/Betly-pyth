@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { Aptos, AptosConfig, Network, Ed25519PrivateKey, Account } from '@aptos-labs/ts-sdk'
 import { config } from '@/lib/config'
+import { pythPullOracle, getPythPrice } from '@/lib/pyth-pull-oracle'
 
 export async function POST() {
   try {
@@ -11,48 +12,35 @@ export async function POST() {
       )
     }
 
-    // Get current price directly from Pyth API
-    let currentPrice
-    try {
-      const pythResponse = await fetch(
-        `${config.pyth.endpoint}/api/latest_price_feeds?ids[]=${config.pyth.aptUsdPriceId}`,
-        {
-          next: { revalidate: 1 }, // Cache for 1 second
-        }
+    console.log('🚀 Starting new round with Pyth pull oracle integration')
+
+    // Step 1: Execute Pyth pull oracle flow
+    // This implements the hackathon requirement: fetch -> update -> consume
+    const pythResult = await getPythPrice(config.pyth.aptUsdPriceId)
+    
+    if (!pythResult.success || !pythResult.priceData) {
+      console.error('❌ Pyth pull oracle failed:', pythResult.error)
+      return NextResponse.json(
+        { 
+          error: 'Failed to get price via Pyth pull oracle',
+          details: pythResult.error 
+        },
+        { status: 500 }
       )
-
-      if (!pythResponse.ok) {
-        throw new Error(`Pyth API error: ${pythResponse.status}`)
-      }
-
-      const data = await pythResponse.json()
-      
-      if (!data || !Array.isArray(data) || data.length === 0) {
-        throw new Error('No price data received from Pyth')
-      }
-
-      const priceFeed = data[0]
-      if (!priceFeed || !priceFeed.price) {
-        throw new Error('Invalid price feed data')
-      }
-
-      const priceData = priceFeed.price
-      currentPrice = parseFloat(priceData.price) * Math.pow(10, priceData.expo)
-      
-      console.log('Fetched start price directly from Pyth:', currentPrice)
-    } catch (priceError) {
-      console.error('Error fetching price from Pyth:', priceError)
-      throw new Error(`Failed to fetch current price: ${priceError instanceof Error ? priceError.message : 'Unknown error'}`)
     }
 
+    const currentPrice = pythResult.priceData.price
+    console.log(`✅ Pyth pull oracle successful: $${currentPrice.toFixed(6)}`)
+    console.log(`📝 Transaction hash: ${pythResult.transactionHash}`)
+
     if (!currentPrice || currentPrice <= 0) {
-      throw new Error('Invalid price data received')
+      throw new Error('Invalid price data received from Pyth pull oracle')
     }
 
     // Convert price to micro-dollars (multiply by 1,000,000)
     const startPriceInMicroDollars = Math.floor(currentPrice * 1000000)
 
-    console.log('Starting round with price:', currentPrice, 'micro-dollars:', startPriceInMicroDollars)
+    console.log('🎯 Starting round with on-chain Pyth price:', currentPrice, 'micro-dollars:', startPriceInMicroDollars)
 
     // Initialize Aptos client
     const aptosConfig = new AptosConfig({
@@ -72,13 +60,13 @@ export async function POST() {
     const privateKey = new Ed25519PrivateKey(config.keeper.privateKey)
     const keeper = Account.fromPrivateKey({ privateKey })
 
-    // Start a new round
+    // Start a new round using the on-chain Pyth price
     const transaction = await aptos.transaction.build.simple({
       sender: keeper.accountAddress,
       data: {
         function: `${config.aptos.moduleAddress}::betting::start_round`,
         functionArguments: [
-          startPriceInMicroDollars, // start_price in micro-dollars
+          startPriceInMicroDollars, // start_price in micro-dollars from on-chain Pyth
           config.keeper.roundDuration, // duration_secs (default: 300 = 5 minutes)
         ],
       },
@@ -93,24 +81,31 @@ export async function POST() {
       transactionHash: committedTxn.hash,
     })
 
-    console.log('Round started:', executedTxn)
+    console.log('✅ Round started successfully with Pyth pull oracle integration')
 
     return NextResponse.json({
       success: true,
-      message: 'Round started successfully',
+      message: 'Round started successfully using Pyth pull oracle',
       transactionHash: committedTxn.hash,
       startPrice: currentPrice,
       startPriceInMicroDollars,
       duration: config.keeper.roundDuration,
       transaction: executedTxn,
+      pythIntegration: {
+        pullOracleUsed: true,
+        pythTransactionHash: pythResult.transactionHash,
+        priceSource: 'on-chain-pyth',
+        confidence: pythResult.priceData.confidence,
+        timestamp: pythResult.priceData.timestamp,
+      },
     })
   } catch (error: unknown) {
-    console.error('Error starting round:', error)
+    console.error('❌ Error starting round with Pyth pull oracle:', error)
     const errorMessage = error instanceof Error ? error.message : 'Unknown error'
     const errorStack = error instanceof Error ? error.stack : undefined
     return NextResponse.json(
       { 
-        error: 'Failed to start round',
+        error: 'Failed to start round with Pyth pull oracle',
         details: errorMessage,
         stack: errorStack,
       },
