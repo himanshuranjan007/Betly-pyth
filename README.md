@@ -58,33 +58,53 @@ graph TB
         B[React Components]
         C[Tailwind CSS]
         D[Wallet Integration]
+        E[Trading Chart]
     end
     
     subgraph "API Layer"
-        E[Next.js API Routes]
-        F[Keeper Services]
-        G[Price Feed API]
+        F[Next.js API Routes]
+        G[Keeper Services]
+        H[Price Feed API]
+        I[WebSocket Handler]
+    end
+    
+    subgraph "Oracle Layer"
+        J[Pyth Network]
+        K[Pyth REST API]
+        L[Pyth WebSocket]
+        M[Price Aggregation]
     end
     
     subgraph "Blockchain Layer"
-        H[Aptos Testnet]
-        I[Smart Contracts]
-        J[Pyth Network]
+        N[Aptos Testnet]
+        O[Smart Contracts]
+        P[Move Modules]
     end
     
     subgraph "External Services"
-        K[Vercel Deployment]
-        L[Environment Variables]
+        Q[Vercel Deployment]
+        R[Environment Variables]
     end
     
-    A --> E
+    A --> F
     B --> D
-    E --> F
-    E --> G
+    E --> I
+    F --> G
     F --> H
-    G --> J
-    H --> I
-    K --> L
+    G --> N
+    H --> K
+    I --> L
+    K --> J
+    L --> J
+    J --> M
+    N --> O
+    O --> P
+    Q --> R
+    
+    style J fill:#f9f,stroke:#333,stroke-width:4px
+    style K fill:#f9f,stroke:#333,stroke-width:2px
+    style L fill:#f9f,stroke:#333,stroke-width:2px
+    style M fill:#f9f,stroke:#333,stroke-width:2px
 ```
 
 ### System Components
@@ -104,6 +124,156 @@ graph TB
 ### Core Module: `betly_betting::betting`
 
 The smart contract is built using the Move language and follows Aptos best practices for security and efficiency.
+
+## 🌐 Pyth Network Integration
+
+Betly leverages **Pyth Network** as the primary price oracle for APT/USD price data, ensuring accurate, real-time, and tamper-proof price feeds for binary options settlement.
+
+### How Pyth Integration Works
+
+#### 1. **Price Feed Configuration**
+```typescript
+// Configuration in src/lib/config.ts
+pyth: {
+  endpoint: 'https://hermes.pyth.network',
+  aptUsdPriceId: '0x03ae4db29ed4ae33d323568895aa00337e658e348b37509f5372ae51f0af00d5'
+}
+```
+
+#### 2. **Real-Time Price Fetching**
+The system uses multiple methods to ensure reliable price data:
+
+**REST API Integration** (`/api/price/route.ts`):
+```typescript
+const response = await fetch(
+  `${config.pyth.endpoint}/api/latest_price_feeds?ids[]=${config.pyth.aptUsdPriceId}`,
+  { next: { revalidate: 1 } } // Cache for 1 second
+)
+
+const priceData = priceFeed.price
+const price = parseFloat(priceData.price) * Math.pow(10, priceData.expo)
+```
+
+**WebSocket Live Updates** (`TradingChart.tsx`):
+```typescript
+const ws = new WebSocket('wss://hermes.pyth.network/ws')
+ws.send(JSON.stringify({
+  ids: [config.pyth.aptUsdPriceId],
+  type: 'subscribe',
+  verbose: true,
+}))
+```
+
+#### 3. **Price Data Structure**
+Pyth provides comprehensive price information:
+```json
+{
+  "price": 12.4567,           // Current APT/USD price
+  "confidence": 0.0001,        // Price confidence interval
+  "timestamp": 1703123456,     // Unix timestamp
+  "symbol": "APT/USD",
+  "raw": {                     // Raw Pyth data
+    "price": "12456700",
+    "expo": -6,
+    "conf": "100",
+    "publish_time": "1703123456"
+  }
+}
+```
+
+#### 4. **Automated Round Management**
+The keeper service uses Pyth prices for:
+
+**Starting New Rounds** (`/api/keeper/start/route.ts`):
+```typescript
+// Fetch current price from Pyth
+const pythResponse = await fetch(`${config.pyth.endpoint}/api/latest_price_feeds?ids[]=${config.pyth.aptUsdPriceId}`)
+const currentPrice = parseFloat(priceData.price) * Math.pow(10, priceData.expo)
+
+// Convert to micro-dollars for smart contract
+const startPriceInMicroDollars = Math.floor(currentPrice * 1000000)
+
+// Start round with current price
+await aptos.transaction.build.simple({
+  function: `${config.aptos.moduleAddress}::betting::start_round`,
+  functionArguments: [startPriceInMicroDollars, config.keeper.roundDuration]
+})
+```
+
+**Settling Rounds** (`/api/keeper/settle/route.ts`):
+```typescript
+// Settle current round with end price
+await aptos.transaction.build.simple({
+  function: `${config.aptos.moduleAddress}::betting::settle`,
+  functionArguments: [roundId, endPriceInMicroDollars]
+})
+
+// Fetch new price for next round
+const nextStartPrice = parseFloat(priceData.price) * Math.pow(10, priceData.expo)
+const nextStartPriceInMicroDollars = Math.floor(nextStartPrice * 1000000)
+
+// Start next round immediately
+await aptos.transaction.build.simple({
+  function: `${config.aptos.moduleAddress}::betting::start_round`,
+  functionArguments: [nextStartPriceInMicroDollars, config.keeper.roundDuration]
+})
+```
+
+#### 5. **Frontend Price Display**
+The trading chart component (`TradingChart.tsx`) provides:
+
+- **Live Price Updates**: Real-time WebSocket connection to Pyth
+- **Historical Data**: Price history for chart visualization
+- **Fallback Mechanisms**: Demo data if Pyth API is unavailable
+- **Periodic Updates**: 5-second backup polling for reliability
+
+```typescript
+// WebSocket connection for live updates
+const ws = new WebSocket('wss://hermes.pyth.network/ws')
+
+// Periodic backup updates
+setInterval(async () => {
+  const response = await fetch('/api/price')
+  const data = await response.json()
+  addPricePoint(data.price)
+}, 5000)
+```
+
+### Pyth Network Benefits
+
+✅ **Decentralized Oracle**: No single point of failure  
+✅ **High Frequency Updates**: Sub-second price updates  
+✅ **Transparent Pricing**: All price data is publicly verifiable  
+✅ **Low Latency**: Optimized for real-time applications  
+✅ **High Accuracy**: Aggregated from multiple exchanges  
+✅ **Tamper-Proof**: Cryptographic price attestations  
+
+### Price Feed Reliability
+
+The system implements multiple layers of reliability:
+
+1. **Primary**: WebSocket connection for real-time updates
+2. **Secondary**: REST API polling every 5 seconds
+3. **Tertiary**: Demo data fallback for development/testing
+4. **Error Handling**: Comprehensive error handling and retry logic
+5. **Validation**: Price data validation before smart contract submission
+
+### Configuration
+
+Add these environment variables to enable Pyth integration:
+
+```bash
+# Pyth Network Configuration
+NEXT_PUBLIC_PYTH_ENDPOINT=https://hermes.pyth.network
+NEXT_PUBLIC_PYTH_APT_USD_PRICE_ID=0x03ae4db29ed4ae33d323568895aa00337e658e348b37509f5372ae51f0af00d5
+```
+
+### Price Precision
+
+- **Smart Contract**: Prices stored in micro-dollars (6 decimal places)
+- **Frontend Display**: Prices shown with 4 decimal places
+- **API Response**: Full precision maintained for calculations
+- **Conversion**: `price * 1,000,000` for smart contract storage
 
 #### Key Functions
 
@@ -297,13 +467,47 @@ npx vercel --prod
 
 ## 📚 API Documentation
 
+### Price Feed API Endpoints
+
+| Endpoint | Method | Description | Pyth Integration |
+|----------|--------|-------------|-------------------|
+| `/api/price` | GET | Get current APT/USD price from Pyth | ✅ Direct Pyth API call |
+
+**Price API Response:**
+```json
+{
+  "price": 12.4567,
+  "confidence": 0.0001,
+  "timestamp": 1703123456,
+  "symbol": "APT/USD",
+  "raw": {
+    "price": "12456700",
+    "expo": -6,
+    "conf": "100",
+    "publish_time": "1703123456"
+  }
+}
+```
+
 ### Keeper API Endpoints
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/keeper/start` | POST | Start the first betting round |
-| `/api/keeper/settle` | POST | Settle current round and start next |
-| `/api/keeper/auto-manage` | POST | Automatically manage rounds |
+| Endpoint | Method | Description | Pyth Integration |
+|----------|--------|-------------|-------------------|
+| `/api/keeper/start` | POST | Start the first betting round | ✅ Fetches current price from Pyth |
+| `/api/keeper/settle` | POST | Settle current round and start next | ✅ Uses Pyth price for settlement |
+| `/api/keeper/auto-manage` | POST | Automatically manage rounds | ✅ Full Pyth integration |
+
+**Keeper Start Round Flow:**
+1. Fetch current APT/USD price from Pyth Network
+2. Convert price to micro-dollars (multiply by 1,000,000)
+3. Call smart contract `start_round` function
+4. Return transaction hash and price data
+
+**Keeper Settle Round Flow:**
+1. Settle current round with provided end price
+2. Fetch new current price from Pyth Network
+3. Start next round with new price
+4. Return settlement and new round data
 
 ### Contract API Endpoints
 
@@ -318,7 +522,6 @@ npx vercel --prod
 |----------|--------|-------------|
 | `/api/claim` | POST | Claim user winnings |
 | `/api/check-winnings` | POST | Check if user has winnings |
-| `/api/price` | GET | Get current APT/USD price |
 
 ### Example API Usage
 
@@ -393,6 +596,53 @@ npm run lint         # Run ESLint
   }
 }
 ```
+
+## 🔧 Troubleshooting
+
+### Pyth Network Issues
+
+**Problem**: Price data not updating
+```bash
+# Check Pyth API connectivity
+curl "https://hermes.pyth.network/api/latest_price_feeds?ids[]=0x03ae4db29ed4ae33d323568895aa00337e658e348b37509f5372ae51f0af00d5"
+
+# Verify WebSocket connection
+# Check browser console for WebSocket errors
+```
+
+**Problem**: Invalid price data
+```typescript
+// Check price data structure
+const response = await fetch('/api/price')
+const data = await response.json()
+console.log('Price data:', data)
+
+// Expected structure:
+// {
+//   price: number,
+//   confidence: number,
+//   timestamp: number,
+//   symbol: "APT/USD"
+// }
+```
+
+**Problem**: Keeper failing to fetch prices
+```bash
+# Check environment variables
+echo $NEXT_PUBLIC_PYTH_ENDPOINT
+echo $NEXT_PUBLIC_PYTH_APT_USD_PRICE_ID
+
+# Test keeper API directly
+curl -X POST http://localhost:3000/api/keeper/start
+```
+
+### Common Solutions
+
+1. **Network Issues**: Ensure stable internet connection
+2. **API Rate Limits**: Pyth has generous rate limits, but check for 429 errors
+3. **WebSocket Reconnection**: Automatic reconnection every 3 seconds
+4. **Fallback Data**: System uses demo data if Pyth is unavailable
+5. **Price Validation**: All prices validated before smart contract submission
 
 ## 🤝 Contributing
 
