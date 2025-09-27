@@ -196,7 +196,7 @@ export default function Home() {
       <header className="border-b border-gray-800 bg-gray-900/50 backdrop-blur-sm">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-white">Orion</h1>
+            <h1 className="text-2xl font-bold text-white">Betly</h1>
             <p className="text-sm text-gray-400">APT/USD Binary Options</p>
           </div>
           <WalletConnect />
@@ -229,7 +229,7 @@ export default function Home() {
         <div className="container mx-auto px-4 py-6">
           <div className="flex items-center justify-between text-sm text-gray-400">
             <div>
-              <p>&copy; 2024 Orion. Built on Aptos.</p>
+              <p>&copy; 2024 Betly. Built on Aptos.</p>
             </div>
             <div className="flex items-center gap-4">
               <span>Powered by Pyth Network</span>

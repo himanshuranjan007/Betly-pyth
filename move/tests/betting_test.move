@@ -1,11 +1,11 @@
 #[test_only]
-module orion_betting::betting_test {
+module betly_betting::betting_test {
     use std::signer;
     use std::timestamp;
     use aptos_framework::coin;
     use aptos_framework::aptos_coin::{Self, AptosCoin};
     use aptos_framework::account;
-    use orion_betting::betting;
+    use betly_betting::betting;
 
     #[test(admin = @0x123, user1 = @0x456, user2 = @0x789, treasury = @0xabc, aptos_framework = @0x1)]
     public entry fun test_full_betting_flow(

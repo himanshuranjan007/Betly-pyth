@@ -1,13 +1,13 @@
 [package]
-name = "orion_betting"
+name = "betly_betting"
 version = "1.0.0"
-authors = ["Orion Team"]
+authors = ["Betly Team"]
 
 [addresses]
-orion_betting = "0x521ede792ad5eee5aece4e9e14bdf3c931f5e8d54939efc39b38afd7dd872cea"
+betly_betting = "0x521ede792ad5eee5aece4e9e14bdf3c931f5e8d54939efc39b38afd7dd872cea"
 
 [dev-addresses]
-orion_betting = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+betly_betting = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
 
 [dependencies]
 AptosFramework = { git = "https://github.com/aptos-labs/aptos-core.git", subdir = "aptos-move/framework/aptos-framework", rev = "mainnet" }

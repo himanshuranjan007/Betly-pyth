@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Orion - APT/USD Binary Options",
+  title: "Betly - APT/USD Binary Options",
   description: "5-minute binary betting on APT/USD price movements. Built on Aptos with Pyth Network.",
 };
 

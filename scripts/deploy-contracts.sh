@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# Orion Betting Contract Deployment Script
+# Betly Betting Contract Deployment Script
 set -e
 
-echo "🚀 Deploying Orion Betting Contracts to Aptos Testnet"
+echo "🚀 Deploying Betly Betting Contracts to Aptos Testnet"
 echo "====================================================="
 
 # Colors for output
@@ -30,7 +30,7 @@ echo -e "${BLUE}🔨 Compiling Move contract...${NC}"
 aptos move compile
 
 echo -e "${BLUE}📦 Publishing contract to testnet...${NC}"
-DEPLOY_OUTPUT=$(aptos move publish --named-addresses orion_betting=default --json)
+DEPLOY_OUTPUT=$(aptos move publish --named-addresses betly_betting=default --json)
 
 # Extract deployed address from output
 DEPLOYED_ADDRESS=$(echo $DEPLOY_OUTPUT | jq -r '.Result.changes[] | select(.type == "write_module") | .address' | head -1)

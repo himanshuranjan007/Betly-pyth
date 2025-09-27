@@ -1,4 +1,4 @@
-module orion_betting::betting {
+module betly_betting::betting {
     use std::signer;
     use std::timestamp;
     use std::error;

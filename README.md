@@ -1,4 +1,4 @@
-# 🚀 Orion - APT/USD Binary Options Platform
+# 🚀 Betly - APT/USD Binary Options Platform
 
 [![Built on Aptos](https://img.shields.io/badge/Built%20on-Aptos-blue)](https://aptoslabs.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -29,7 +29,7 @@ Traditional betting platforms suffer from:
 - **Limited accessibility** to global markets
 - **High fees** and hidden costs
 
-**Orion solves these problems by:**
+**Betly solves these problems by:**
 - ✅ **Decentralized betting** on Aptos blockchain
 - ✅ **Real-time price data** from Pyth Network
 - ✅ **Automated settlement** with 1.8x instant payouts
@@ -38,7 +38,7 @@ Traditional betting platforms suffer from:
 
 ## 🌐 Live Demo
 
-**🔗 Production URL:** [orion-eosin.vercel.app/](https://orion-eosin.vercel.app/)
+**🔗 Production URL:** [betly-eosin.vercel.app/](https://betly-eosin.vercel.app/)
 
 **📱 Features:**
 - Real-time APT/USD price chart
@@ -101,14 +101,14 @@ graph TB
 
 ## 🔧 Smart Contract Design
 
-### Core Module: `orion_betting::betting`
+### Core Module: `betly_betting::betting`
 
 The smart contract is built using the Move language and follows Aptos best practices for security and efficiency.
 
 #### Key Functions
 
 ```move
-module orion_betting::betting {
+module betly_betting::betting {
     // Core Functions
     public entry fun init(admin: &signer, fee_bps: u64, treasury: address)
     public entry fun start_round(admin: &signer, start_price: u64, duration_secs: u64)
@@ -183,8 +183,8 @@ struct UserBet has store {
 
 1. **Clone the repository**
 ```bash
-git clone https://github.com/your-username/orion-betting.git
-cd orion-betting
+git clone https://github.com/your-username/betly-betting.git
+cd betly-betting
 ```
 
 2. **Install dependencies**
@@ -248,7 +248,7 @@ NEXT_PUBLIC_APTOS_NETWORK=testnet
 NEXT_PUBLIC_APTOS_NODE_URL=https://api.testnet.aptoslabs.com/v1
 NEXT_PUBLIC_APTOS_API_KEY=your_geomi_api_key
 NEXT_PUBLIC_MODULE_ADDRESS=0x521ede792ad5eee5aece4e9e14bdf3c931f5e8d54939efc39b38afd7dd872cea
-NEXT_PUBLIC_VERCEL_URL=orion-4dviyhaso-himanshuranjan007s-projects.vercel.app
+NEXT_PUBLIC_VERCEL_URL=betly-4dviyhaso-himanshuranjan007s-projects.vercel.app
 NEXT_PUBLIC_PYTH_ENDPOINT=https://hermes.pyth.network
 NEXT_PUBLIC_PYTH_APT_USD_PRICE_ID=0x03ae4db29ed4ae33d323568895aa00337e658e348b37509f5372ae51f0af00d5
 KEEPER_PRIVATE_KEY=your_private_key
@@ -273,7 +273,7 @@ aptos init --network testnet
 3. **Deploy the contract**
 ```bash
 cd move
-aptos move publish --named-addresses orion_betting=0x521ede792ad5eee5aece4e9e14bdf3c931f5e8d54939efc39b38afd7dd872cea
+aptos move publish --named-addresses betly_betting=0x521ede792ad5eee5aece4e9e14bdf3c931f5e8d54939efc39b38afd7dd872cea
 ```
 
 4. **Initialize the contract**
@@ -345,7 +345,7 @@ const winnings = await fetch('/api/check-winnings', {
 ### Project Structure
 
 ```
-orion/
+betly/
 ├── src/
 │   ├── app/                    # Next.js app router
 │   │   ├── api/               # API routes
@@ -437,13 +437,13 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📞 Support
 
-- **Documentation**: [GitHub Wiki](https://github.com/your-username/orion-betting/wiki)
-- **Issues**: [GitHub Issues](https://github.com/your-username/orion-betting/issues)
+- **Documentation**: [GitHub Wiki](https://github.com/your-username/betly-betting/wiki)
+- **Issues**: [GitHub Issues](https://github.com/your-username/betly-betting/issues)
 - **Discord**: [Join our community](https://discord.gg/your-discord)
-- **Twitter**: [@OrionBetting](https://twitter.com/orionbetting)
+- **Twitter**: [@BetlyBetting](https://twitter.com/betlybetting)
 
 ---
 
-**Built with ❤️ by the Orion Team**
+**Built with ❤️ by the Betly Team**
 
 *Empowering decentralized betting on Aptos blockchain*

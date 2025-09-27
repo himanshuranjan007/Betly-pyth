@@ -11,7 +11,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       autoConnect={true}
       dappConfig={{
         network: config.aptos.network as Network,
-        aptosConnectDappId: 'orion-betting-dapp'
+        aptosConnectDappId: 'betly-betting-dapp'
       }}
     >
       {children}

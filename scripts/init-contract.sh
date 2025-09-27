@@ -10,7 +10,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-echo -e "${BLUE}🔧 Initializing Orion Betting Contract${NC}"
+echo -e "${BLUE}🔧 Initializing Betly Betting Contract${NC}"
 echo "======================================"
 
 # Read module address from .env.local
@@ -89,4 +89,4 @@ echo "1. Start the development server: bun dev"
 echo "2. Connect your wallet in the UI"
 echo "3. Start betting rounds (admin only)"
 echo ""
-echo -e "${GREEN}🎉 Your Orion Betting DApp is ready!${NC}"
+echo -e "${GREEN}🎉 Your Betly Betting DApp is ready!${NC}"

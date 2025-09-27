@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# Orion Betting Contract Deployment Script
+# Betly Betting Contract Deployment Script
 set -e
 
-echo "🚀 Deploying Orion Betting Contract to Aptos Testnet"
+echo "🚀 Deploying Betly Betting Contract to Aptos Testnet"
 echo "================================================="
 
 # Check if aptos CLI is installed
@@ -31,7 +31,7 @@ aptos move compile
 
 echo ""
 echo "📦 Publishing contract to testnet..."
-aptos move publish --named-addresses orion_betting=default
+aptos move publish --named-addresses betly_betting=default
 
 echo ""
 echo "✅ Contract deployed successfully!"
