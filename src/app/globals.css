@@ -1,0 +1,62 @@
+@import "tailwindcss";
+
+:root {
+  --background: #030712;
+  --foreground: #f9fafb;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+}
+
+/* Custom scrollbar for webkit browsers */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1f2937;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #4b5563;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #6b7280;
+}
+
+/* Wallet adapter overrides */
+.wallet-adapter-dropdown {
+  background: #1f2937 !important;
+  border: 1px solid #374151 !important;
+}
+
+.wallet-adapter-dropdown-list {
+  background: #1f2937 !important;
+  border: 1px solid #374151 !important;
+}
+
+.wallet-adapter-dropdown-list-item {
+  background: #1f2937 !important;
+  color: #f9fafb !important;
+}
+
+.wallet-adapter-dropdown-list-item:hover {
+  background: #374151 !important;
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+}
