@@ -1,8 +1,3 @@
-# 🏆 Smart Contract Updated for On-Chain Pyth Price Consumption
-
-## ✅ **COMPLETE**: Smart Contract Now Consumes On-Chain Pyth Prices
-
-The Betly smart contract has been successfully updated to consume on-chain Pyth prices, completing the full pull oracle pattern implementation required for hackathon qualification.
 
 ## 🚀 **What Was Updated:**
 
@@ -130,14 +125,3 @@ bun run dev
 curl http://localhost:3000/api/pyth-pull-oracle
 ```
 
-## 🎉 **Final Status:**
-
-**Betly now has COMPLETE on-chain Pyth price consumption!**
-
-The smart contract successfully implements the full pull oracle pattern:
-- ✅ Fetches price data from Pyth Hermes
-- ✅ Updates price feeds on-chain via smart contract
-- ✅ Consumes prices directly from smart contract
-- ✅ Provides comprehensive price tracking and verification
-
-**Ready to compete for the $5,000 Pyth Network hackathon prize! 🏆**
